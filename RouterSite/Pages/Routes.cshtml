@@ -1,0 +1,143 @@
+﻿@page
+@model RouterSite.Pages.RoutesModel
+@{
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="~/site.css" />
+    <link href="~/lib/font-awesome/css/all.css" rel="stylesheet" />
+    <title>Routes</title>
+    <environment include="Development">
+        <script src="~/lib/vue.global.js"></script>
+    </environment>
+    <environment exclude="Development">
+        <script src="~/lib/vue.global.prod.js"></script>
+    </environment>
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>Routes</h1>
+        <div class="route headings">
+            <h2>Path</h2>
+            <h2>Destination</h2>
+        </div>
+        <div class="route" v-for="route in routes">
+            <template v-if="route.isEditing || route.isCreating">
+                <div v-if="route.isEditing">{{ route.path }}</div>
+                <input :class="{ warn: !isValidPath(route.path) }" ref="path" v-model="route.path" v-if="route.isCreating" />
+                <input v-model="route.destination" />
+                <button v-on:click="undo(route)">
+                    <i class="fas fa-ban"></i>
+                </button>
+                <button class="save" v-on:click="upsert(route)" v-bind:disabled="!(isValidPath(route.path) && isValidUrl(route.destination))">
+                    <i class="fas fa-plus-square"></i>
+                </button>
+            </template>
+
+            <template v-else>
+                <div>{{ route.path }}</div>
+                <div v-on:dblclick="edit(route)" >{{ route.destination }}</div>
+                <button v-on:click="edit(route)">
+                    <i class="fas fa-pencil-alt"></i>
+                </button>
+                <button class="warn" v-on:click="deleteRoute(route)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </template>
+        </div>
+
+        <button class="create" v-if="!isCreating" v-on:click="newRoute" >New Route</button>
+    </div>
+
+    <script>
+        Vue.createApp({
+            data() {
+                return {
+                    routes: []
+                }
+            },
+            methods: {
+                newRoute() {
+                    this.routes.push({ path: '/', destination: 'https://', isEditing: false, isCreating: true });
+                    this.refs$.path.focus();
+                },
+                edit(route) {
+                    route.isEditing = true;
+                    route.oldPath = route.path;
+                    route.oldDestination = route.destination;
+                },
+                undo(route) {
+                    if (route.isCreating)
+                        this.routes.pop();
+                    else {
+                        route.path = route.oldPath;
+                        route.destination = route.oldDestination;
+                        route.isEditing = false;
+                        route.isCreating = false;
+                    }
+                },
+                upsert(route) {
+                    fetch("/api/routes", {
+                        body: JSON.stringify(route),
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                    })
+                    .then(() => {
+                        Object.assign(route, { isEditing: false, isCreating: false });
+                    });
+                },
+                deleteRoute(route) {
+                    let self = this;
+                    fetch("/api/routes", {
+                        body: route.path,
+                        method: "DELETE"
+                    })
+                    .then(self.routes = self.routes.filter(r => r.path !== route.path))
+                },
+                isValidPath(path) {
+                    return path && !this.pathSet.has(path);
+                },
+                isValidUrl(destination) {
+                    let url;
+
+                    try {
+                        url = new URL(destination);
+                    } catch (_) {
+                        return false;
+                    }
+
+                    return url.protocol === "http:" || url.protocol === "https:";
+                }
+            },
+            created() {
+                fetch("/api/routes")
+                    .then(response => response.json())
+                    .then(data => {
+                        data.forEach(route => {
+                            Object.assign(route, { isEditing: false, isCreating: false });
+                            this.routes.push(route);
+                        })
+                        this.routes = this.routes.slice(1, 10);
+                        
+                    });
+            },
+            computed: {
+                isCreating() {
+                    let lastRoute = this.routes[this.routes.length - 1];
+                    return lastRoute && lastRoute.isCreating;
+                },
+                pathSet() {
+                    return new Set(this.routes.map(r => r.path).slice(0, this.routes.length - 1));
+                }
+            }
+        }).mount("#app");
+    </script>
+
+</body>
+</html>
